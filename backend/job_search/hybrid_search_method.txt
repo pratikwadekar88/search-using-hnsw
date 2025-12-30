@@ -1,0 +1,94 @@
+    @action(detail=False, methods=['get'])
+    def hybrid_search(self, request):
+        """
+        Hybrid search combining semantic vectors + keyword matching.
+        Uses Reciprocal Rank Fusion (RRF) to merge results.
+        
+        Query params:
+        - q: search query (required)
+        - page: page number (default: 1)
+        - page_size: results per page (default: 25)
+        """
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return Response({'error': 'Query parameter "q" is required'}, status=400)
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 25))
+        
+        # 1. Semantic Search (Vector) - Get top 100
+        query_vec = EMBEDDING_MODEL.encode(query)
+        semantic_ids = list(
+            Job.objects.filter(is_active=True, is_deleted=False)
+            .alias(distance=CosineDistance('search_vector', query_vec))
+            .order_by('distance')
+            .values_list('id', flat=True)[:100]
+        )
+        
+        # 2. Keyword Search (Full-Text) - Get top 100
+        try:
+            keyword_jobs = Job.fulltext_search(query, limit=100)
+            keyword_ids = [job.id for job in keyword_jobs]
+        except Exception as e:
+            # Fallback to semantic only if full-text search fails
+            print(f"Full-text search error: {e}")
+            keyword_ids = []
+        
+        # 3. Merge using Reciprocal Rank Fusion (RRF)
+        merged_ids = self._reciprocal_rank_fusion(semantic_ids, keyword_ids, k=60)
+        
+        # 4. Paginate merged results
+        total_count = len(merged_ids)
+        total_pages = (total_count + page_size - 1) // page_size
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_job_ids = merged_ids[start_idx:end_idx]
+        
+        # 5. Fetch jobs preserving order
+        jobs = Job.objects.filter(id__in=page_job_ids)
+        jobs = sorted(jobs, key=lambda x: page_job_ids.index(x.id))
+        
+        serializer = JobSerializer(jobs, many=True)
+        
+        return Response({
+            'query': query,
+            'mode': 'hybrid',
+            'semantic_results': len(semantic_ids),
+            'keyword_results': len(keyword_ids),
+            'page': page,
+            'page_size': page_size,
+            'total_results': total_count,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_previous': page > 1,
+            'results': serializer.data
+        })
+    
+    def _reciprocal_rank_fusion(self, list1, list2, k=60):
+        """
+        Merge two ranked lists using Reciprocal Rank Fusion.
+        
+        RRF Score = 1/(k + rank1) + 1/(k + rank2)
+        
+        Paper: https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf
+        
+        Args:
+            list1: First ranked list (e.g., semantic search results)
+            list2: Second ranked list (e.g., keyword search results)
+            k: RRF constant (default: 60)
+            
+        Returns:
+            List of IDs sorted by combined RRF score
+        """
+        scores = {}
+        
+        # Score from first list (semantic)
+        for rank, item_id in enumerate(list1, start=1):
+            scores[item_id] = scores.get(item_id, 0) + 1 / (k + rank)
+        
+        # Score from second list (keyword)
+        for rank, item_id in enumerate(list2, start=1):
+            scores[item_id] = scores.get(item_id, 0) + 1 / (k + rank)
+        
+        # Sort by combined score (highest first)
+        return [item_id for item_id, score in sorted(scores.items(), key=lambda x: x[1], reverse=True)]

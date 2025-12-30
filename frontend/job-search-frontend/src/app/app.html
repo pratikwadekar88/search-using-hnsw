@@ -1,0 +1,119 @@
+<div class="container">
+  <header class="header">
+    <h1>🔍 {{ title }}</h1>
+    <p class="subtitle">Find your dream job using AI-powered semantic search</p>
+  </header>
+
+  <section class="search-section">
+    <div class="search-box">
+      <input type="text" class="search-input" [(ngModel)]="searchQuery" (keyup.enter)="onSearchClick()"
+        placeholder="Search for jobs... (e.g., 'Python developer', 'Machine Learning', 'React frontend')">
+      <button class="search-btn" (click)="onSearchClick()" [disabled]="loading">
+        <span *ngIf="!loading">🔍</span>
+        <span *ngIf="loading" class="spinner-small"></span>
+      </button>
+      <button *ngIf="searchQuery" class="clear-btn" (click)="clearSearch()">×</button>
+    </div>
+    <p class="search-hint">
+      💡 Try searching for: <strong>"machine learning"</strong>, <strong>"python backend"</strong>, or <strong>"devops
+        kubernetes"</strong>
+    </p>
+  </section>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="loading">
+    <div class="spinner"></div>
+    <p>Searching through {{searchMode ? 'semantic matches' : 'all jobs'}}...</p>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error && !loading" class="error">
+    <p>{{ error }}</p>
+    <button class="retry-btn" (click)="searchMode ? onSearchClick() : loadAllJobs()">
+      Try Again
+    </button>
+  </div>
+
+  <!-- Results Header -->
+  <div *ngIf="!loading && !error && jobs.length > 0" class="results-header">
+    <h3>
+      <span *ngIf="searchMode">
+        Found {{ totalResults }} results for "{{ searchQuery }}"
+      </span>
+      <span *ngIf="!searchMode">
+        Showing all jobs ({{ totalResults }} total)
+      </span>
+    </h3>
+    <p class="results-info">
+      Page {{ currentPage }} of {{ totalPages }} • Showing {{ jobs.length }} results
+    </p>
+  </div>
+
+  <!-- Jobs Grid -->
+  <div *ngIf="!loading && !error" class="jobs-grid">
+    <div *ngIf="jobs.length === 0" class="no-results">
+      <h3>No jobs found</h3>
+      <p>Try adjusting your search terms or browse all available jobs</p>
+      <button class="retry-btn" (click)="clearSearch()">View All Jobs</button>
+    </div>
+
+    <div *ngFor="let job of jobs; let i = index" class="job-card">
+      <div class="job-header">
+        <h2>{{ job.job_title }}</h2>
+        <span *ngIf="searchMode && job.similarity" class="similarity-badge">
+          {{ job.similarity }}% match
+        </span>
+        <span *ngIf="!searchMode" class="rank-badge">
+          #{{ (currentPage - 1) * pageSize + i + 1 }}
+        </span>
+      </div>
+
+      <div class="job-company">
+        <span class="company">🏢 {{ job.company }}</span>
+        <span class="location">📍 {{ job.location }}</span>
+      </div>
+
+      <div class="job-meta">
+        <span *ngIf="job.job_type">💼 {{ job.job_type }}</span>
+        <span *ngIf="job.salary_min && job.salary_max">
+          💰 ${{ job.salary_min | number:'1.0-0' }} - ${{ job.salary_max | number:'1.0-0' }}
+        </span>
+      </div>
+
+      <div class="skills" *ngIf="job.key_skills && job.key_skills.length > 0">
+        <span *ngFor="let skill of job.key_skills" class="skill-tag">{{ skill }}</span>
+      </div>
+
+      <p class="description" *ngIf="job.description">
+        {{ stripHtml(job.description).slice(0, 200) }}{{ stripHtml(job.description).length > 200 ? '...' : '' }}
+      </p>
+
+      <div class="job-footer">
+        <small>Posted {{ job.created_at | date:'mediumDate' }}</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pagination Controls -->
+  <div *ngIf="!loading && !error && totalPages > 1" class="pagination">
+    <button class="pagination-btn" (click)="previousPage()" [disabled]="!hasPrevious">
+      ← Previous
+    </button>
+
+    <div class="pagination-numbers">
+      <button *ngFor="let page of getPageNumbers()" class="pagination-number" [class.active]="page === currentPage"
+        (click)="goToPage(page)">
+        {{ page }}
+      </button>
+    </div>
+
+    <button class="pagination-btn" (click)="nextPage()" [disabled]="!hasNext">
+      Next →
+    </button>
+  </div>
+
+  <div *ngIf="!loading && !error && totalPages > 1" class="pagination-info">
+    Showing results {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, totalResults) }} of {{
+    totalResults }}
+  </div>
+</div>
