@@ -83,12 +83,12 @@ class Job(models.Model):
     
     def generate_embedding_text(self):
         """
-        Constructs a single 'rich' string for the AI to read.
-        We repeat important fields to give them 'weight' in the embedding.
+        Hierarchical relevance: Title >> Skills >> Description
+        - Title repeated 5x (maximum priority)
+        - Skills repeated 2x (high priority)
+        - Description appears once (supporting info only)
         """
         title = self.job_title or ""
-        company_name = self.company or ""
-        location_name = self.location or ""
         
         # Handle key_skills (it's a JSON list, so join it)
         if isinstance(self.key_skills, list):
@@ -99,15 +99,15 @@ class Job(models.Model):
         clean_desc = self.clean_html(self.description)
         clean_reqs = self.clean_html(self.requirements)
         
-        # PRO TIP: The structure helps the model understand context.
-        # We repeat Title and Skills to prioritize them over long descriptions.
+        # HIERARCHICAL MATCHING:
+        # 1. Title (5x) - First priority
+        # 2. Skills (2x) - Second priority  
+        # 3. Description (1x) - Supporting info
         combined_text = (
-            f"Job Title: {title}. "
-            f"Company: {company_name}. "
-            f"Location: {location_name}. "
-            f"Required Skills: {skills}. "
-            f"Description: {clean_desc}. "
-            f"Requirements: {clean_reqs}"
+            f"{title}. {title}. {title}. {title}. {title}. "  # Title 5x
+            f"{skills}. {skills}. "  # Skills 2x
+            f"{clean_desc}. "  # Description 1x
+            f"{clean_reqs}"  # Requirements 1x
         )
         return combined_text
     
